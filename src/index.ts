@@ -1,8 +1,8 @@
-export { detectCiContext } from './ci-context.js';
-export type { CiProvider, RunnerKind, CiContext } from './ci-context.js';
+export { detectCiContext, detectEventTrigger, detectRunnerOs } from './ci-context.js';
+export type { CiProvider, RunnerKind, CiContext, EventTrigger, RunnerOs } from './ci-context.js';
 
-export { detectRepoContext } from './repo-context.js';
-export type { GitProvider, RepoContext, RepoContextInput } from './repo-context.js';
+export { detectRepoContext, classifyRefKind } from './repo-context.js';
+export type { GitProvider, RepoContext, RepoContextInput, RefKind } from './repo-context.js';
 
 export {
   createTelemetryContext,

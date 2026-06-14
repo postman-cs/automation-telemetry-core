@@ -23,6 +23,9 @@ clear, no personal data:
 | `repo_id` | `sha256(repo slug or url)` — hashed, never clear |
 | `org_id` | `sha256(owner)` — hashed VCS org/group/workspace |
 | `account_type` | service / user / unknown (from session consumerType) |
+| `event_trigger` | push / pull_request / schedule / manual / other / unknown (what kicked off the run) |
+| `runner_os` | linux / macos / windows / unknown |
+| `ref_kind` | default-branch / branch / tag / unknown — coarsened; the raw branch/tag name is never sent |
 
 ## Usage
 

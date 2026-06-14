@@ -1,6 +1,6 @@
 {
   "name": "@postman-cse/automation-telemetry-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shared anonymous usage telemetry for postman-actions: CI context, repo context, and the fire-and-forget event client.",
   "type": "module",
   "main": "dist/index.js",

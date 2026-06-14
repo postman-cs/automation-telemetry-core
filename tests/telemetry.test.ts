@@ -3,7 +3,8 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { connect as netConnect, type AddressInfo } from 'node:net';
 import { EnvHttpProxyAgent } from 'undici';
 
-import { detectCiContext } from '../src/ci-context.js';
+import { detectCiContext, detectEventTrigger, detectRunnerOs } from '../src/ci-context.js';
+import { classifyRefKind } from '../src/repo-context.js';
 import {
   accountTypeFromConsumer,
   buildTelemetryEvent,
@@ -46,7 +47,7 @@ describe('detectCiContext: one positive case per active provider', () => {
         GITHUB_RUN_ID: '42',
         RUNNER_ENVIRONMENT: 'github-hosted'
       })
-    ).toEqual({ ciProvider: 'github', runId: '42', runnerKind: 'hosted' });
+    ).toMatchObject({ ciProvider: 'github', runId: '42', runnerKind: 'hosted' });
   });
 
   it('gitlab (CI_PIPELINE_ID, fallback IID)', () => {
@@ -95,7 +96,7 @@ describe('detectCiContext: one positive case per active provider', () => {
   });
 
   it('teamcity (TEAMCITY_VERSION, runId BUILD_NUMBER, self-hosted)', () => {
-    expect(detectCiContext({ TEAMCITY_VERSION: '2024.03', BUILD_NUMBER: '17' })).toEqual({
+    expect(detectCiContext({ TEAMCITY_VERSION: '2024.03', BUILD_NUMBER: '17' })).toMatchObject({
       ciProvider: 'teamcity',
       runId: '17',
       runnerKind: 'self-hosted'
@@ -126,11 +127,11 @@ describe('detectCiContext: one positive case per active provider', () => {
   });
 
   it('other (CI truthy, no vendor match)', () => {
-    expect(detectCiContext({ CI: 'true' })).toEqual({ ciProvider: 'other', runnerKind: 'unknown' });
+    expect(detectCiContext({ CI: 'true' })).toMatchObject({ ciProvider: 'other', runnerKind: 'unknown' });
   });
 
   it('unknown (not in CI)', () => {
-    expect(detectCiContext({})).toEqual({ ciProvider: 'unknown', runnerKind: 'unknown' });
+    expect(detectCiContext({})).toMatchObject({ ciProvider: 'unknown', runnerKind: 'unknown' });
   });
 });
 
@@ -192,7 +193,7 @@ describe('accountTypeFromConsumer', () => {
   });
 });
 
-describe('buildTelemetryEvent (schema 2)', () => {
+describe('buildTelemetryEvent (schema 3)', () => {
   it('hashes repo + org, carries no names, sets the new fields', () => {
     const event = buildTelemetryEvent({
       action: 'postman-bootstrap-action',
@@ -204,12 +205,16 @@ describe('buildTelemetryEvent (schema 2)', () => {
         GITHUB_ACTIONS: 'true',
         GITHUB_REPOSITORY: 'acme/widgets',
         GITHUB_SERVER_URL: 'https://github.com',
-        GITHUB_RUN_ID: '5'
+        GITHUB_RUN_ID: '5',
+        GITHUB_EVENT_NAME: 'push',
+        RUNNER_OS: 'Linux',
+        GITHUB_REF_NAME: 'main',
+        GITHUB_DEFAULT_BRANCH: 'main'
       },
       now: () => 1700000000000
     });
     expect(event).toMatchObject({
-      schema_version: 2,
+      schema_version: 3,
       event: 'completion',
       action: 'postman-bootstrap-action',
       action_version: '1.2.3',
@@ -218,6 +223,9 @@ describe('buildTelemetryEvent (schema 2)', () => {
       git_provider: 'github',
       run_id: '5',
       account_type: 'service',
+      event_trigger: 'push',
+      runner_os: 'linux',
+      ref_kind: 'default-branch',
       outcome: 'success',
       ts: 1700000000000
     });
@@ -276,6 +284,122 @@ describe('buildTelemetryEvent (schema 2)', () => {
   });
 });
 
+describe('detectEventTrigger', () => {
+  it('github events map to the coarse enum', () => {
+    expect(detectEventTrigger({ GITHUB_EVENT_NAME: 'push' })).toBe('push');
+    expect(detectEventTrigger({ GITHUB_EVENT_NAME: 'pull_request' })).toBe('pull_request');
+    expect(detectEventTrigger({ GITHUB_EVENT_NAME: 'pull_request_target' })).toBe('pull_request');
+    expect(detectEventTrigger({ GITHUB_EVENT_NAME: 'schedule' })).toBe('schedule');
+    expect(detectEventTrigger({ GITHUB_EVENT_NAME: 'workflow_dispatch' })).toBe('manual');
+    expect(detectEventTrigger({ GITHUB_EVENT_NAME: 'repository_dispatch' })).toBe('manual');
+    expect(detectEventTrigger({ GITHUB_EVENT_NAME: 'release' })).toBe('other');
+  });
+
+  it('gitlab pipeline sources map to the coarse enum', () => {
+    expect(detectEventTrigger({ CI_PIPELINE_SOURCE: 'push' })).toBe('push');
+    expect(detectEventTrigger({ CI_PIPELINE_SOURCE: 'merge_request_event' })).toBe('pull_request');
+    expect(detectEventTrigger({ CI_PIPELINE_SOURCE: 'schedule' })).toBe('schedule');
+    expect(detectEventTrigger({ CI_PIPELINE_SOURCE: 'web' })).toBe('manual');
+    expect(detectEventTrigger({ CI_PIPELINE_SOURCE: 'external' })).toBe('other');
+  });
+
+  it('bitbucket PR id signals pull_request', () => {
+    expect(detectEventTrigger({ BITBUCKET_PR_ID: '42' })).toBe('pull_request');
+  });
+
+  it('in CI without a trigger signal is other; outside CI is unknown', () => {
+    expect(detectEventTrigger({ CI: 'true' })).toBe('other');
+    expect(detectEventTrigger({})).toBe('unknown');
+  });
+});
+
+describe('detectRunnerOs', () => {
+  it('reads RUNNER_OS case-insensitively', () => {
+    expect(detectRunnerOs({ RUNNER_OS: 'Linux' })).toBe('linux');
+    expect(detectRunnerOs({ RUNNER_OS: 'macOS' })).toBe('macos');
+    expect(detectRunnerOs({ RUNNER_OS: 'Windows' })).toBe('windows');
+  });
+
+  it('falls back to the host platform when RUNNER_OS is absent', () => {
+    const expected =
+      process.platform === 'linux'
+        ? 'linux'
+        : process.platform === 'darwin'
+          ? 'macos'
+          : process.platform === 'win32'
+            ? 'windows'
+            : 'unknown';
+    expect(detectRunnerOs({})).toBe(expected);
+  });
+});
+
+describe('classifyRefKind', () => {
+  it('detects tags across providers', () => {
+    expect(classifyRefKind({ GITHUB_REF_TYPE: 'tag' })).toBe('tag');
+    expect(classifyRefKind({ GITHUB_REF: 'refs/tags/v1.2.3' })).toBe('tag');
+    expect(classifyRefKind({ CI_COMMIT_TAG: 'v1.2.3' })).toBe('tag');
+    expect(classifyRefKind({ BITBUCKET_TAG: 'v1' })).toBe('tag');
+    expect(classifyRefKind({ BUILD_SOURCEBRANCH: 'refs/tags/v1' })).toBe('tag');
+  });
+
+  it('detects the default branch only when the ref matches the provider default', () => {
+    expect(classifyRefKind({ GITHUB_REF_NAME: 'main', GITHUB_DEFAULT_BRANCH: 'main' })).toBe('default-branch');
+    expect(classifyRefKind({ GITHUB_REF_NAME: 'feature/x', GITHUB_DEFAULT_BRANCH: 'main' })).toBe('branch');
+    expect(classifyRefKind({ CI_COMMIT_REF_NAME: 'trunk', CI_DEFAULT_BRANCH: 'trunk' })).toBe('default-branch');
+    expect(classifyRefKind({ CI_COMMIT_REF_NAME: 'topic', CI_DEFAULT_BRANCH: 'trunk' })).toBe('branch');
+  });
+
+  it('falls back to branch when a ref is present but the default is unknown', () => {
+    expect(classifyRefKind({ GITHUB_REF_NAME: 'anything' })).toBe('branch');
+    expect(classifyRefKind({ GITHUB_REF: 'refs/heads/dev' })).toBe('branch');
+    expect(classifyRefKind({ BITBUCKET_BRANCH: 'dev' })).toBe('branch');
+  });
+
+  it('is unknown when nothing resolves', () => {
+    expect(classifyRefKind({})).toBe('unknown');
+  });
+});
+
+describe('buildTelemetryEvent: privacy of the ref/trigger fields', () => {
+  it('never emits the raw branch or tag name', () => {
+    const event = buildTelemetryEvent({
+      action: 'a',
+      actionVersion: 'x',
+      teamId: 't',
+      accountType: 'unknown',
+      outcome: 'success',
+      env: {
+        GITHUB_ACTIONS: 'true',
+        GITHUB_REF_NAME: 'feature/secret-project-zeta',
+        GITHUB_REF: 'refs/heads/feature/secret-project-zeta',
+        GITHUB_DEFAULT_BRANCH: 'main',
+        GITHUB_EVENT_NAME: 'push',
+        RUNNER_OS: 'Linux'
+      },
+      now: () => 0
+    });
+    expect(event.ref_kind).toBe('branch');
+    expect(JSON.stringify(event)).not.toContain('secret-project-zeta');
+    expect(JSON.stringify(event)).not.toContain('feature/');
+  });
+
+  it('defaults the three fields to unknown outside CI', () => {
+    const event = buildTelemetryEvent({
+      action: 'a',
+      actionVersion: 'x',
+      teamId: 't',
+      accountType: 'unknown',
+      outcome: 'success',
+      env: {},
+      now: () => 0
+    });
+    expect(event.event_trigger).toBe('unknown');
+    expect(event.ref_kind).toBe('unknown');
+    // runner_os falls back to the host platform, which is a known value here.
+    expect(['linux', 'macos', 'windows', 'unknown']).toContain(event.runner_os);
+  });
+});
+
 describe('createTelemetryContext', () => {
   it('sends one completion event via the transport when enabled', async () => {
     const transport = vi.fn(async () => new Response(null, { status: 204 }));
@@ -304,7 +428,7 @@ describe('createTelemetryContext', () => {
     await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
     const body = JSON.parse(String(((transport.mock.calls[0] as unknown[])[1] as RequestInit)?.body));
     expect(body.account_type).toBe('service');
-    expect(body.schema_version).toBe(2);
+    expect(body.schema_version).toBe(3);
   });
 
   it('defaults account_type to unknown when setAccountType is never called', async () => {

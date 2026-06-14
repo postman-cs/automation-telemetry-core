@@ -1,5 +1,10 @@
 export type GitProvider = 'github' | 'gitlab' | 'bitbucket' | 'azure-devops' | 'unknown';
 
+// Coarse ref classification. The raw branch/tag name is deliberately NOT sent on
+// the wire (names leak feature/project info); this enum is the privacy-safe
+// signal for "runs on the default branch vs a feature branch vs a tag".
+export type RefKind = 'default-branch' | 'branch' | 'tag' | 'unknown';
+
 export interface RepoContextInput {
   repoUrl?: string;
   repoSlug?: string;
@@ -14,6 +19,7 @@ export interface RepoContext {
   repoSlug?: string;
   ref?: string;
   sha?: string;
+  refKind: RefKind;
 }
 
 function normalize(value?: string): string | undefined {
@@ -77,6 +83,54 @@ function parseProvider(
   return 'unknown';
 }
 
+// Classify the ref as default-branch / branch / tag without ever emitting the
+// name. Tag detection keys on the contractual per-provider signals; the
+// default-branch test compares the resolved ref to the provider's
+// default-branch env. When neither proves out, fall back conservatively to
+// 'branch' (we are on a ref of some kind) or 'unknown' (no ref resolved).
+export function classifyRefKind(env: NodeJS.ProcessEnv = process.env): RefKind {
+  // Tag signals, most-specific first.
+  const githubRefType = normalize(env.GITHUB_REF_TYPE)?.toLowerCase();
+  const githubRef = normalize(env.GITHUB_REF);
+  const azureRef = normalize(env.BUILD_SOURCEBRANCH);
+  if (
+    githubRefType === 'tag' ||
+    githubRef?.startsWith('refs/tags/') ||
+    normalize(env.CI_COMMIT_TAG) ||
+    normalize(env.BITBUCKET_TAG) ||
+    azureRef?.startsWith('refs/tags/')
+  ) {
+    return 'tag';
+  }
+
+  // Default-branch test: only assert it when the provider hands us both the
+  // current ref and its own notion of the default, and they match.
+  const githubRefName = normalize(env.GITHUB_REF_NAME);
+  const githubDefault = normalize(env.GITHUB_DEFAULT_BRANCH);
+  if (githubRefName && githubDefault) {
+    return githubRefName === githubDefault ? 'default-branch' : 'branch';
+  }
+  const gitlabRef = normalize(env.CI_COMMIT_REF_NAME);
+  const gitlabDefault = normalize(env.CI_DEFAULT_BRANCH);
+  if (gitlabRef && gitlabDefault) {
+    return gitlabRef === gitlabDefault ? 'default-branch' : 'branch';
+  }
+
+  // A ref is present but we cannot prove it is the default -> 'branch'.
+  if (
+    githubRefName ||
+    githubRef?.startsWith('refs/heads/') ||
+    gitlabRef ||
+    normalize(env.BITBUCKET_BRANCH) ||
+    normalize(env.BUILD_SOURCEBRANCHNAME) ||
+    azureRef?.startsWith('refs/heads/')
+  ) {
+    return 'branch';
+  }
+
+  return 'unknown';
+}
+
 export function detectRepoContext(
   input: RepoContextInput,
   env: NodeJS.ProcessEnv = process.env
@@ -108,12 +162,14 @@ export function detectRepoContext(
     normalize(env.BITBUCKET_COMMIT) ??
     normalize(env.BUILD_SOURCEVERSION);
   const provider = parseProvider(input.gitProvider, repoUrl, env);
+  const refKind = classifyRefKind(env);
 
   return {
     provider,
     repoUrl,
     repoSlug,
     ref,
-    sha
+    sha,
+    refKind
   };
 }

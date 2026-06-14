@@ -1,7 +1,7 @@
 // CI-system detection for telemetry. Framework-agnostic: reads only env, never
 // shells out, no @actions/core. Covers 11 named providers plus 'other'/'unknown'
 // fallbacks; the named set is (GitHub, GitLab, CircleCI, Buildkite, Azure Pipelines, AWS
-// CodeBuild, Bitbucket Pipelines, TeamCity, Harness, Jenkins, Concourse); a run
+// CodeBuild, Bitbucket Pipelines, TeamCity, Harness, Concourse); a run
 // in any other CI lands in 'other', and a run outside CI lands in 'unknown'.
 // runner_kind is reported only where a contractual hosted/self-hosted env flag
 // exists (GitHub via RUNNER_ENVIRONMENT, Buildkite via BUILDKITE_COMPUTE_TYPE);
@@ -25,7 +25,30 @@ export type CiProvider =
 
 export type RunnerKind = 'hosted' | 'self-hosted' | 'unknown';
 
+// What kicked off the run. Low-cardinality, non-personal: push / pull_request /
+// schedule / manual (workflow_dispatch, web, api, trigger) / other (a CI trigger
+// we don't map) / unknown (not in CI).
+export type EventTrigger =
+  | 'push'
+  | 'pull_request'
+  | 'schedule'
+  | 'manual'
+  | 'other'
+  | 'unknown';
+
+// The runner operating system. Non-personal coarse enum.
+export type RunnerOs = 'linux' | 'macos' | 'windows' | 'unknown';
+
 export interface CiContext {
+  ciProvider: CiProvider;
+  runId?: string;
+  runnerKind: RunnerKind;
+  eventTrigger: EventTrigger;
+  runnerOs: RunnerOs;
+}
+
+// The provider-specific slice, before the env-derived trigger/OS are merged on.
+interface CiProviderContext {
   ciProvider: CiProvider;
   runId?: string;
   runnerKind: RunnerKind;
@@ -36,7 +59,67 @@ function norm(value?: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+// Map the per-provider trigger env to the coarse EventTrigger enum. Reads only
+// env; never guesses beyond the contractual variables.
+export function detectEventTrigger(env: NodeJS.ProcessEnv = process.env): EventTrigger {
+  // GitHub Actions.
+  const ghEvent = norm(env.GITHUB_EVENT_NAME)?.toLowerCase();
+  if (ghEvent) {
+    if (ghEvent === 'push') return 'push';
+    if (ghEvent === 'pull_request' || ghEvent === 'pull_request_target') return 'pull_request';
+    if (ghEvent === 'schedule') return 'schedule';
+    if (ghEvent === 'workflow_dispatch' || ghEvent === 'repository_dispatch') return 'manual';
+    return 'other';
+  }
+
+  // GitLab CI.
+  const glSource = norm(env.CI_PIPELINE_SOURCE)?.toLowerCase();
+  if (glSource) {
+    if (glSource === 'push') return 'push';
+    if (glSource === 'merge_request_event') return 'pull_request';
+    if (glSource === 'schedule') return 'schedule';
+    if (glSource === 'web' || glSource === 'api' || glSource === 'trigger' || glSource === 'pipeline') {
+      return 'manual';
+    }
+    return 'other';
+  }
+
+  // Bitbucket Pipelines exposes a PR id only on pull-request pipelines.
+  if (norm(env.BITBUCKET_PR_ID)) return 'pull_request';
+
+  // In CI on a system we don't have a trigger signal for -> other; otherwise not
+  // in CI at all -> unknown.
+  if (norm(env.CI) || norm(env.BUILD_BUILDID) || norm(env.JENKINS_URL) || norm(env.TEAMCITY_VERSION)) {
+    return 'other';
+  }
+  return 'unknown';
+}
+
+// Map RUNNER_OS (GitHub's contractual var) to the coarse RunnerOs enum, with a
+// process.platform fallback for non-GitHub CI.
+export function detectRunnerOs(env: NodeJS.ProcessEnv = process.env): RunnerOs {
+  const runnerOs = norm(env.RUNNER_OS)?.toLowerCase();
+  if (runnerOs === 'linux') return 'linux';
+  if (runnerOs === 'macos') return 'macos';
+  if (runnerOs === 'windows') return 'windows';
+
+  const platform = typeof process !== 'undefined' ? process.platform : undefined;
+  if (platform === 'linux') return 'linux';
+  if (platform === 'darwin') return 'macos';
+  if (platform === 'win32') return 'windows';
+  return 'unknown';
+}
+
 export function detectCiContext(env: NodeJS.ProcessEnv = process.env): CiContext {
+  const provider = detectCiProviderContext(env);
+  return {
+    ...provider,
+    eventTrigger: detectEventTrigger(env),
+    runnerOs: detectRunnerOs(env)
+  };
+}
+
+function detectCiProviderContext(env: NodeJS.ProcessEnv = process.env): CiProviderContext {
   if (norm(env.GITHUB_ACTIONS)) {
     const runnerEnv = norm(env.RUNNER_ENVIRONMENT);
     const runnerKind: RunnerKind =

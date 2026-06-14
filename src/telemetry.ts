@@ -6,22 +6,25 @@
 // Payload is account/CI-level only: no secrets, no spec content, no repo names
 // in clear, no personal data. team_id is sent clear (legitimate-interest basis,
 // see each action's README Telemetry section). repo_id and org_id are hashed;
-// git_provider and account_type are low-cardinality enums.
+// git_provider, account_type, event_trigger, runner_os, and ref_kind are
+// low-cardinality enums. ref_kind is coarsened (default-branch/branch/tag) so
+// the raw branch or tag name is never sent.
 
 import { createHash } from 'node:crypto';
 
 import { EnvHttpProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 
 import { detectCiContext } from './ci-context.js';
+import type { EventTrigger, RunnerOs } from './ci-context.js';
 import { detectRepoContext } from './repo-context.js';
-import type { GitProvider } from './repo-context.js';
+import type { GitProvider, RefKind } from './repo-context.js';
 
 // Injected at build via the consuming action's esbuild --define; the core ships
 // compiled JS so this identifier is replaced when the action bundles it.
 // Undefined under vitest/tsc, where the typeof guard falls back to 'unknown'.
 declare const __ACTION_VERSION__: string | undefined;
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const DEFAULT_TIMEOUT_MS = 1500;
 // Live collector on the Postman CSE + FDE Cloudflare account.
 // Override with POSTMAN_ACTIONS_TELEMETRY_ENDPOINT.
@@ -81,6 +84,9 @@ export interface TelemetryEvent {
   repo_id?: string;
   org_id?: string;
   account_type: AccountType;
+  event_trigger: EventTrigger;
+  runner_os: RunnerOs;
+  ref_kind: RefKind;
   outcome: 'success' | 'failure';
   ts: number;
 }
@@ -134,7 +140,7 @@ function maybeNotice(logger: TelemetryLogger | undefined): void {
   }
   noticeShown = true;
   logger.info(
-    'note: postman-actions sends anonymous usage data (team id, action, CI provider, account type). ' +
+    'note: postman-actions sends anonymous usage data (team id, action, CI provider, account type, run trigger, runner OS). ' +
       'Disable with POSTMAN_ACTIONS_TELEMETRY=off or DO_NOT_TRACK=1.'
   );
 }
@@ -171,6 +177,9 @@ export function buildTelemetryEvent(params: BuildTelemetryEventParams): Telemetr
     repo_id: repoSource ? sha256(repoSource) : undefined,
     org_id: owner ? sha256(owner) : undefined,
     account_type: accountType,
+    event_trigger: ci.eventTrigger,
+    runner_os: ci.runnerOs,
+    ref_kind: repo.refKind,
     outcome,
     ts: now()
   };
