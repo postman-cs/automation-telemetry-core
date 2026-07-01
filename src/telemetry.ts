@@ -53,8 +53,9 @@ export interface TelemetryLogger {
 
 export interface TelemetryOptions {
   action: string;
-  // The consuming action's version. Defaults to the bundled __ACTION_VERSION__
-  // define (or 'unknown' under test) when omitted.
+  // The consuming action's version. When omitted, resolves at runtime from
+  // GITHUB_ACTION_REF, then the bundled __ACTION_VERSION__ define, then
+  // 'unknown'. Actions pass their package.json version here explicitly.
   actionVersion?: string;
   logger?: TelemetryLogger;
   env?: NodeJS.ProcessEnv;
@@ -91,9 +92,20 @@ export interface TelemetryEvent {
   ts: number;
 }
 
-function resolveActionVersion(explicit?: string): string {
+function resolveActionVersion(
+  explicit?: string,
+  env: NodeJS.ProcessEnv = process.env
+): string {
   if (explicit) {
     return explicit;
+  }
+  // GitHub sets GITHUB_ACTION_REF to the ref the action was invoked with (e.g.
+  // "v1", "v2.0.0", or a sha). Prefer it over the compile-time define so the
+  // consuming action's bundle no longer needs a version baked in via
+  // esbuild --define, which kept dist churning on every release bump.
+  const ref = env.GITHUB_ACTION_REF?.trim();
+  if (ref) {
+    return ref;
   }
   return typeof __ACTION_VERSION__ !== 'undefined' && __ACTION_VERSION__
     ? __ACTION_VERSION__
@@ -218,7 +230,7 @@ async function send(event: TelemetryEvent, options: TelemetryOptions): Promise<v
 export function createTelemetryContext(options: TelemetryOptions): TelemetryContext {
   const env = options.env ?? process.env;
   const now = options.now ?? Date.now;
-  const actionVersion = resolveActionVersion(options.actionVersion);
+  const actionVersion = resolveActionVersion(options.actionVersion, env);
   let teamId = '';
   let accountType: AccountType = 'unknown';
   let emitted = false;

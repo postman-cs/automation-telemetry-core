@@ -415,6 +415,49 @@ describe('createTelemetryContext', () => {
     expect(JSON.parse(String(init?.body)).team_id).toBe('10490519');
   });
 
+  it('resolves action_version from GITHUB_ACTION_REF when actionVersion is omitted', async () => {
+    const transport = vi.fn(async () => new Response(null, { status: 204 }));
+    const ctx = createTelemetryContext({
+      action: 'postman-bootstrap-action',
+      env: { GITHUB_ACTIONS: 'true', GITHUB_ACTION_REF: 'v2.0.0' },
+      transport: transport as unknown as typeof fetch
+    });
+    ctx.setTeamId('10490519');
+    ctx.emitCompletion('success');
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(String(((transport.mock.calls[0] as unknown[])[1] as RequestInit)?.body));
+    expect(body.action_version).toBe('v2.0.0');
+  });
+
+  it('prefers an explicit actionVersion over GITHUB_ACTION_REF', async () => {
+    const transport = vi.fn(async () => new Response(null, { status: 204 }));
+    const ctx = createTelemetryContext({
+      action: 'postman-bootstrap-action',
+      actionVersion: '2.1.2',
+      env: { GITHUB_ACTIONS: 'true', GITHUB_ACTION_REF: 'v2.0.0' },
+      transport: transport as unknown as typeof fetch
+    });
+    ctx.setTeamId('10490519');
+    ctx.emitCompletion('success');
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(String(((transport.mock.calls[0] as unknown[])[1] as RequestInit)?.body));
+    expect(body.action_version).toBe('2.1.2');
+  });
+
+  it('falls back to unknown action_version without a define or GITHUB_ACTION_REF', async () => {
+    const transport = vi.fn(async () => new Response(null, { status: 204 }));
+    const ctx = createTelemetryContext({
+      action: 'postman-bootstrap-action',
+      env: { GITHUB_ACTIONS: 'true' },
+      transport: transport as unknown as typeof fetch
+    });
+    ctx.setTeamId('10490519');
+    ctx.emitCompletion('success');
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(String(((transport.mock.calls[0] as unknown[])[1] as RequestInit)?.body));
+    expect(body.action_version).toBe('unknown');
+  });
+
   it('threads account_type from setAccountType into the event', async () => {
     const transport = vi.fn(async () => new Response(null, { status: 204 }));
     const ctx = createTelemetryContext({
