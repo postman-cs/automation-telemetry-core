@@ -11,21 +11,25 @@ A single `completion` event per action run, after `team_id` resolves. Payload is
 account/CI-level only — no secrets, no spec content, no repo or org names in
 clear, no personal data:
 
-| Field | Notes |
-| --- | --- |
-| `schema_version` | wire contract version (currently 2) |
-| `action`, `action_version`, `outcome`, `ts` | which action ran and how it finished |
-| `team_id` | Postman team id, sent clear (legitimate-interest basis) |
-| `ci_provider` | detected CI system (11 named + other/unknown) |
-| `git_provider` | github / gitlab / bitbucket / azure-devops / unknown |
-| `runner_kind` | hosted / self-hosted / unknown (where contractually known) |
-| `run_id` | CI run identifier |
-| `repo_id` | `sha256(repo slug or url)` — hashed, never clear |
-| `org_id` | `sha256(owner)` — hashed VCS org/group/workspace |
-| `account_type` | service / user / unknown (from session consumerType) |
-| `event_trigger` | push / pull_request / schedule / manual / other / unknown (what kicked off the run) |
-| `runner_os` | linux / macos / windows / unknown |
-| `ref_kind` | default-branch / branch / tag / unknown — coarsened; the raw branch/tag name is never sent |
+| Field | Since | Notes |
+| --- | --- | --- |
+| `schema_version` | v1 | wire contract version (currently 3) |
+| `action`, `action_version`, `outcome`, `ts` | v1 | which action ran and how it finished |
+| `team_id` | v1 | Postman team id, sent clear (legitimate-interest basis) |
+| `ci_provider` | v1 | detected CI system (11 named + other/unknown) |
+| `runner_kind` | v1 | hosted / self-hosted / unknown (where contractually known) |
+| `run_id` | v1 | CI run identifier |
+| `repo_id` | v1 | `sha256(repo slug or url)` — hashed, never clear |
+| `git_provider` | v2 | github / gitlab / bitbucket / azure-devops / unknown |
+| `org_id` | v2 | `sha256(owner)` — hashed VCS org/group/workspace |
+| `account_type` | v2 | service / user / unknown (from session consumerType) |
+| `event_trigger` | v3 | push / pull_request / schedule / manual / other / unknown (what kicked off the run) |
+| `runner_os` | v3 | linux / macos / windows / unknown |
+| `ref_kind` | v3 | default-branch / branch / tag / unknown — coarsened; the raw branch/tag name is never sent |
+
+The collector (`postman-automation-events-worker`, `events.pm-cse.dev`) accepts
+schema versions 1, 2, and 3, so already-released actions keep ingesting; fields
+a sender's schema version predates are defaulted to `unknown` (hashes to empty).
 
 ## Usage
 

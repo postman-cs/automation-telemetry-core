@@ -27,9 +27,9 @@ npm run lint        # eslint .
 
 ## Wire Contract
 
-Emits one `completion` event per action run, after `team_id` resolves. `schema_version` is `2`. Fields: `action`, `action_version`, `outcome`, `ts`, `team_id` (clear), `ci_provider`, `runner_kind`, `run_id`, `repo_id` (`sha256`), plus the schema-2 additions `git_provider`, `org_id` (`sha256(owner)`), and `account_type` (service/user/unknown). No secrets, spec content, or clear repo/org names. Opt out with `POSTMAN_ACTIONS_TELEMETRY=off` or `DO_NOT_TRACK`.
+Emits one `completion` event per action run, after `team_id` resolves. `schema_version` is `3`. Fields: `action`, `action_version`, `outcome`, `ts`, `team_id` (clear), `ci_provider`, `runner_kind`, `run_id`, `repo_id` (`sha256`), the schema-2 additions `git_provider`, `org_id` (`sha256(owner)`), and `account_type` (service/user/unknown), plus the schema-3 additions `event_trigger`, `runner_os`, and `ref_kind` (coarsened to default-branch/branch/tag). No secrets, spec content, clear repo/org names, or raw ref names. Opt out with `POSTMAN_ACTIONS_TELEMETRY=off` or `DO_NOT_TRACK`.
 
-The collector is the `postman-automation-events-worker` Worker (`events.pm-cse.dev`), which accepts both `schema_version` 1 and 2.
+The collector is the `postman-automation-events-worker` Worker (`events.pm-cse.dev`), which accepts `schema_version` 1, 2, and 3, defaulting fields a sender's version predates to `unknown`.
 
 ## Gotchas
 
