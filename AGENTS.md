@@ -36,3 +36,14 @@ The collector is the `postman-automation-events-worker` Worker (`events.pm-cse.d
 - Builds with `tsc` to emit a clean ESM library (no bundling); the consuming action's esbuild does the inlining, and `--define:__ACTION_VERSION__` in the action applies across the inlined code so `action_version` resolves automatically.
 - The client is fire-and-forget: a telemetry failure must never fail or slow an action run.
 - Schema changes must stay backward compatible -- the collector ingests already-released actions still on `schema_version` 1.
+
+## CI
+
+`.github/workflows/ci.yml` runs a single `gate` job that fans out lint, typecheck, test, build, and actionlint
+as backgrounded shell processes on one runner: wall-clock is `max(gate)`, not
+`sum`, setup runs once, and every gate prints its result under a `::group::`
+block even when another fails.
+
+This is a library: `build` is a compile check and its `dist/` is gitignored, so there is no dist-drift gate and no commit-message gate.
+
+See the workspace `docs/CI.md` for the shared rationale.
