@@ -38,3 +38,17 @@ export type {
   LogFields,
   HttpDiagnostic
 } from './logger.js';
+
+export {
+  createSecretsResolverExec,
+  createSecretsResolverItem,
+  createSecretsResolverV3Body,
+  DEFAULT_SECRETS_RESOLVER_PROVIDER,
+  isSecretsResolverEnabled,
+  isSecretsResolverItemName,
+  parseSecretsResolverProvider,
+  SECRETS_RESOLVER_ITEM_NAME,
+  SECRETS_RESOLVER_PROVIDERS,
+  secretsResolverEnvironmentKeys
+} from './secrets-resolver.js';
+export type { SecretsResolverProvider } from './secrets-resolver.js';
