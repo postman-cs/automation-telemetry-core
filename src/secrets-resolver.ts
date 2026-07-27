@@ -105,10 +105,19 @@ function resolverExecTail(extractExpression: string): string[] {
   ];
 }
 
+function assertSecretsResolverEnabled(
+  provider: SecretsResolverProvider
+): asserts provider is Exclude<SecretsResolverProvider, 'none'> {
+  if (provider === 'none') {
+    throw new Error('SECRETS_RESOLVER_DISABLED: provider "none" cannot create a secrets resolver');
+  }
+}
+
 /** Legacy AWS exec, byte-identical to the pre-provider implementation. */
 export function createSecretsResolverExec(
-  provider: SecretsResolverProvider = 'aws'
+  provider: SecretsResolverProvider
 ): string[] {
+  assertSecretsResolverEnabled(provider);
   switch (provider) {
     case 'azure':
       return resolverExecTail('body.value');
@@ -138,8 +147,9 @@ export function createSecretsResolverExec(
 
 /** Collection v2.1 helper item for the selected provider. */
 export function createSecretsResolverItem(
-  provider: SecretsResolverProvider = 'aws'
+  provider: SecretsResolverProvider
 ): JsonRecord {
+  assertSecretsResolverEnabled(provider);
   if (provider === 'azure') {
     return {
       name: SECRETS_RESOLVER_ITEM_NAME,
@@ -158,7 +168,12 @@ export function createSecretsResolverItem(
           query: [{ key: 'api-version', value: '7.4' }]
         }
       },
-      event: [{ listen: 'test', script: { exec: createSecretsResolverExec('azure') } }]
+      event: [
+      {
+        listen: 'test',
+        script: { type: 'text/javascript', exec: createSecretsResolverExec('azure') }
+      }
+    ]
     };
   }
 
@@ -187,7 +202,12 @@ export function createSecretsResolverItem(
           ]
         }
       },
-      event: [{ listen: 'test', script: { exec: createSecretsResolverExec('gcp') } }]
+      event: [
+      {
+        listen: 'test',
+        script: { type: 'text/javascript', exec: createSecretsResolverExec('gcp') }
+      }
+    ]
     };
   }
 
@@ -216,7 +236,12 @@ export function createSecretsResolverItem(
         host: ['secretsmanager', '{{AWS_REGION}}', 'amazonaws', 'com']
       }
     },
-    event: [{ listen: 'test', script: { exec: createSecretsResolverExec('aws') } }]
+    event: [
+      {
+        listen: 'test',
+        script: { type: 'text/javascript', exec: createSecretsResolverExec('aws') }
+      }
+    ]
   };
 }
 
@@ -226,8 +251,9 @@ export function createSecretsResolverItem(
  * at the root; `auth.credentials` rather than a type-keyed array).
  */
 export function createSecretsResolverV3Body(
-  provider: SecretsResolverProvider = 'aws'
+  provider: SecretsResolverProvider
 ): JsonRecord {
+  assertSecretsResolverEnabled(provider);
   if (provider === 'azure') {
     return {
       $kind: 'http-request',

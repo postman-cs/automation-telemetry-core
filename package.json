@@ -1,6 +1,6 @@
 {
   "name": "@postman-cse/automation-core",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Shared runtime core for postman-actions: structured redaction-safe logging, CI/repo context detection, and the fire-and-forget telemetry client.",
   "type": "module",
   "main": "dist/index.js",
@@ -21,6 +21,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "verify:package": "node scripts/verify-package-exports.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",

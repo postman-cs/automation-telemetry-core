@@ -19,6 +19,28 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function runResolverExec(
+  provider: Exclude<SecretsResolverProvider, 'none'>,
+  response: unknown,
+  ci = false
+): { responseJsonCalls: number; collectionVariables: Map<string, unknown> } {
+  let responseJsonCalls = 0;
+  const collectionVariables = new Map<string, unknown>();
+  const pm = {
+    environment: { get: (key: string) => (key === 'CI' && ci ? 'true' : undefined) },
+    response: {
+      json: () => {
+        responseJsonCalls += 1;
+        return response;
+      }
+    },
+    collectionVariables: { set: (key: string, value: unknown) => collectionVariables.set(key, value) }
+  };
+
+  new Function('pm', 'Buffer', createSecretsResolverExec(provider).join('\n'))(pm, Buffer);
+  return { responseJsonCalls, collectionVariables };
+}
+
 describe('secrets resolver provider contract', () => {
   it('defaults to off so no consumer ships a doomed request', () => {
     expect(DEFAULT_SECRETS_RESOLVER_PROVIDER).toBe('none');
@@ -66,21 +88,24 @@ describe('secrets resolver provider contract', () => {
     }
   });
 
-  it('seeds no environment keys when the resolver is off', () => {
+  it('seeds the exact ordered provider-scoped environment keys', () => {
+    expect(secretsResolverEnvironmentKeys('aws').map((entry) => entry.key)).toEqual([
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      'AWS_REGION',
+      'AWS_SECRET_NAME'
+    ]);
+    expect(secretsResolverEnvironmentKeys('azure').map((entry) => entry.key)).toEqual([
+      'AZURE_KEY_VAULT_NAME',
+      'AZURE_SECRET_NAME',
+      'AZURE_ACCESS_TOKEN'
+    ]);
+    expect(secretsResolverEnvironmentKeys('gcp').map((entry) => entry.key)).toEqual([
+      'GCP_PROJECT_ID',
+      'GCP_SECRET_NAME',
+      'GCP_ACCESS_TOKEN'
+    ]);
     expect(secretsResolverEnvironmentKeys('none')).toEqual([]);
-  });
-
-  it('seeds provider-scoped environment keys and never leaks another cloud', () => {
-    const aws = secretsResolverEnvironmentKeys('aws').map((entry) => entry.key);
-    const azure = secretsResolverEnvironmentKeys('azure').map((entry) => entry.key);
-    const gcp = secretsResolverEnvironmentKeys('gcp').map((entry) => entry.key);
-
-    expect(aws).toEqual(['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'AWS_SECRET_NAME']);
-    expect(azure.every((key) => key.startsWith('AZURE_'))).toBe(true);
-    expect(gcp.every((key) => key.startsWith('GCP_'))).toBe(true);
-    // the historical bug: AWS vars seeded for non-AWS consumers
-    expect(azure.some((key) => key.startsWith('AWS_'))).toBe(false);
-    expect(gcp.some((key) => key.startsWith('AWS_'))).toBe(false);
   });
 
   it('marks exactly the credential-bearing keys secret', () => {
@@ -93,59 +118,81 @@ describe('secrets resolver provider contract', () => {
     expect(secretKeys('gcp')).toEqual(['GCP_ACCESS_TOKEN']);
   });
 
-  it('skips in CI for every provider so the helper contributes no CI assertions', () => {
+  it('executes each provider script to extract its response bundle into collection variables', () => {
+    expect(runResolverExec('aws', { SecretString: '{"awsKey":"awsValue"}' }).collectionVariables).toEqual(
+      new Map([['awsKey', 'awsValue']])
+    );
+    expect(runResolverExec('azure', { value: '{"azureKey":"azureValue"}' }).collectionVariables).toEqual(
+      new Map([['azureKey', 'azureValue']])
+    );
+    expect(
+      runResolverExec('gcp', {
+        payload: { data: Buffer.from('{"gcpKey":"gcpValue"}', 'utf8').toString('base64') }
+      }).collectionVariables
+    ).toEqual(new Map([['gcpKey', 'gcpValue']]));
+  });
+
+  it('returns before response parsing or writes in CI for every enabled provider', () => {
     for (const provider of ['aws', 'azure', 'gcp'] as const) {
-      expect(createSecretsResolverExec(provider)[0]).toContain('pm.environment.get("CI") === "true"');
+      const result = runResolverExec(provider, { unexpected: 'response' }, true);
+      expect(result.responseJsonCalls).toBe(0);
+      expect(result.collectionVariables).toEqual(new Map());
     }
   });
 
-  it('extracts the secret bundle from each provider response shape', () => {
-    expect(createSecretsResolverExec('aws').join('\n')).toContain('body.SecretString');
-    expect(createSecretsResolverExec('azure').join('\n')).toContain('body.value');
-    const gcp = createSecretsResolverExec('gcp').join('\n');
-    expect(gcp).toContain('body.payload && body.payload.data');
-    expect(gcp).toContain('base64');
-  });
+  it('builds exact v2 and v3 wire contracts for every provider', () => {
+    const contracts = {
+      aws: {
+        method: 'POST',
+        url: 'https://secretsmanager.{{AWS_REGION}}.amazonaws.com',
+        headers: [
+          { key: 'X-Amz-Target', value: 'secretsmanager.GetSecretValue' },
+          { key: 'Content-Type', value: 'application/x-amz-json-1.1' }
+        ],
+        auth: {
+          type: 'awsv4',
+          credentials: [
+            { key: 'accessKey', value: '{{AWS_ACCESS_KEY_ID}}' },
+            { key: 'secretKey', value: '{{AWS_SECRET_ACCESS_KEY}}' },
+            { key: 'region', value: '{{AWS_REGION}}' },
+            { key: 'service', value: 'secretsmanager' }
+          ]
+        },
+        body: { v2: { mode: 'raw', raw: '{"SecretId": "{{AWS_SECRET_NAME}}"}' }, v3: { type: 'json', content: '{"SecretId": "{{AWS_SECRET_NAME}}"}' } }
+      },
+      azure: {
+        method: 'GET',
+        url: 'https://{{AZURE_KEY_VAULT_NAME}}.vault.azure.net/secrets/{{AZURE_SECRET_NAME}}?api-version=7.4',
+        headers: [{ key: 'Accept', value: 'application/json' }],
+        auth: { type: 'bearer', credentials: [{ key: 'token', value: '{{AZURE_ACCESS_TOKEN}}' }] }
+      },
+      gcp: {
+        method: 'GET',
+        url: 'https://secretmanager.googleapis.com/v1/projects/{{GCP_PROJECT_ID}}/secrets/{{GCP_SECRET_NAME}}/versions/latest:access',
+        headers: [{ key: 'Accept', value: 'application/json' }],
+        auth: { type: 'bearer', credentials: [{ key: 'token', value: '{{GCP_ACCESS_TOKEN}}' }] }
+      }
+    } as const;
 
-  it('fans every provider bundle out into collection variables', () => {
     for (const provider of ['aws', 'azure', 'gcp'] as const) {
-      expect(createSecretsResolverExec(provider).join('\n')).toContain('pm.collectionVariables.set');
-    }
-  });
-
-  it('builds the AWS item with sigv4 auth and the GetSecretValue target', () => {
-    const item = record(createSecretsResolverItem('aws'));
-    const request = record(item.request);
-    expect(record(request.auth).type).toBe('awsv4');
-    expect(request.method).toBe('POST');
-    const headers = request.header as Array<{ key: string; value: string }>;
-    expect(headers.find((h) => h.key === 'X-Amz-Target')?.value).toBe('secretsmanager.GetSecretValue');
-  });
-
-  it('builds the Azure item as a bearer GET against Key Vault', () => {
-    const request = record(record(createSecretsResolverItem('azure')).request);
-    expect(request.method).toBe('GET');
-    expect(record(request.auth).type).toBe('bearer');
-    expect(String(record(request.url).raw)).toContain('vault.azure.net/secrets/');
-    expect(String(record(request.url).raw)).toContain('api-version=7.4');
-  });
-
-  it('builds the GCP item as a bearer GET against the access endpoint', () => {
-    const request = record(record(createSecretsResolverItem('gcp')).request);
-    expect(request.method).toBe('GET');
-    expect(record(request.auth).type).toBe('bearer');
-    expect(String(record(request.url).raw)).toContain('secretmanager.googleapis.com');
-    expect(String(record(request.url).raw)).toContain('versions/latest:access');
-  });
-
-  it('carries v3 request internals at the item root, never under a payload wrapper', () => {
-    for (const provider of ['aws', 'azure', 'gcp'] as const) {
-      const body = record(createSecretsResolverV3Body(provider));
-      expect(body.$kind).toBe('http-request');
-      expect(body.payload).toBeUndefined();
-      expect(typeof body.url).toBe('string');
-      expect(body.method).toBeTruthy();
-      expect(record(body.auth).credentials).toBeDefined();
+      const contract = contracts[provider];
+      const v2 = record(record(createSecretsResolverItem(provider)).request);
+      const v3 = record(createSecretsResolverV3Body(provider));
+      expect(v2.method).toBe(contract.method);
+      expect(record(v2.url).raw).toBe(contract.url);
+      expect(v2.header).toEqual(contract.headers);
+      expect(record(v2.auth)).toEqual({ type: contract.auth.type, [contract.auth.type]: contract.auth.credentials });
+      expect(v3).toEqual({
+        $kind: 'http-request',
+        name: SECRETS_RESOLVER_ITEM_NAME,
+        method: contract.method,
+        url: contract.url,
+        headers: contract.headers,
+        ...(provider === 'aws' ? { body: contracts.aws.body.v3 } : {}),
+        auth: contract.auth
+      });
+      if (provider === 'aws') expect(v2.body).toEqual(contracts.aws.body.v2);
+      else expect(v2.body).toBeUndefined();
     }
   });
 

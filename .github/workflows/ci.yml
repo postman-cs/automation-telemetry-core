@@ -35,7 +35,7 @@ jobs:
           run lint       npm run lint
           run typecheck  npm run typecheck
           run test       npm test
-          run build      npm run build
+          run build      bash -c 'npm run build && npm run verify:package'
           run actionlint "$ACTIONLINT_BIN"
 
           fail=0
