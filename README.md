@@ -1,4 +1,4 @@
-# @postman-cse/automation-telemetry-core
+# @postman-cse/automation-core
 
 Shared anonymous usage telemetry for the postman-actions suite. One source of
 truth for CI-system detection, repo/SCM detection, and the fire-and-forget event
@@ -34,7 +34,7 @@ a sender's schema version predates are defaulted to `unknown` (hashes to empty).
 ## Usage
 
 ```ts
-import { createTelemetryContext } from '@postman-cse/automation-telemetry-core';
+import { createTelemetryContext } from '@postman-cse/automation-core';
 
 const telemetry = createTelemetryContext({ action: 'postman-bootstrap-action' });
 telemetry.setTeamId(teamId);

@@ -19,3 +19,20 @@ export type {
   AccountType,
   BuildTelemetryEventParams
 } from './telemetry.js';
+
+export {
+  createLogger,
+  consoleSink,
+  resolveLogLevel,
+  describeError,
+  describeUrl,
+  httpFields
+} from './logger.js';
+export type {
+  Logger,
+  LoggerOptions,
+  LogSink,
+  LogLevel,
+  LogFields,
+  HttpDiagnostic
+} from './logger.js';

@@ -1,7 +1,7 @@
 {
-  "name": "@postman-cse/automation-telemetry-core",
-  "version": "0.3.0",
-  "description": "Shared anonymous usage telemetry for postman-actions: CI context, repo context, and the fire-and-forget event client.",
+  "name": "@postman-cse/automation-core",
+  "version": "1.0.0",
+  "description": "Shared runtime core for postman-actions: structured redaction-safe logging, CI/repo context detection, and the fire-and-forget telemetry client.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -28,7 +28,8 @@
   },
   "keywords": [
     "postman",
-    "telemetry"
+    "telemetry",
+    "logging"
   ],
   "license": "MIT",
   "publishConfig": {
