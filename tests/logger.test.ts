@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  actionSink,
   consoleSink,
   createLogger,
   describeError,
@@ -284,6 +285,93 @@ describe('phase', () => {
       })
     ).rejects.toThrow();
     expect(lines.join()).not.toContain('PMAK-leaky-token');
+  });
+});
+
+describe('actionSink', () => {
+  it('routes each level to the matching channel of a full facade', () => {
+    const calls: string[] = [];
+    const log = createLogger({
+      sink: actionSink({
+        info: (m) => calls.push(`info ${m}`),
+        debug: (m) => calls.push(`debug ${m}`),
+        warning: (m) => calls.push(`warning ${m}`),
+        error: (m) => calls.push(`error ${m}`)
+      }),
+      env: {},
+      level: 'debug',
+      correlationId: 'r1'
+    });
+    log.debug('d');
+    log.info('i');
+    log.warning('w');
+    log.error('e');
+    // The run id rides every line regardless of channel, so one run stays
+    // reassemblable from an aggregated log.
+    expect(calls).toEqual([
+      'debug d | run=r1',
+      'info i | run=r1',
+      'warning w | run=r1',
+      'error e | run=r1'
+    ]);
+  });
+
+  it('degrades error to the next channel the host implements', () => {
+    const calls: string[] = [];
+    // The narrowest reporter in the suite: info only. An error must still land
+    // somewhere rather than disappear because the facade lacks the channel.
+    const infoOnly = createLogger({
+      sink: actionSink({ info: (m) => calls.push(`info ${m}`) }),
+      env: {},
+      level: 'debug',
+      correlationId: 'r1'
+    });
+    infoOnly.error('boom');
+    infoOnly.warning('careful');
+    expect(calls).toEqual(['info boom | run=r1', 'info careful | run=r1']);
+
+    const warnOnly: string[] = [];
+    createLogger({
+      sink: actionSink({
+        info: (m) => warnOnly.push(`info ${m}`),
+        warning: (m) => warnOnly.push(`warning ${m}`)
+      }),
+      env: {},
+      level: 'debug',
+      correlationId: 'r1'
+    }).error('boom');
+    expect(warnOnly).toEqual(['warning boom | run=r1']);
+  });
+
+  it('drops debug rather than promoting it into a host without a debug channel', () => {
+    const calls: string[] = [];
+    const log = createLogger({
+      sink: actionSink({ info: (m) => calls.push(`info ${m}`) }),
+      env: {},
+      level: 'debug',
+      correlationId: 'r1'
+    });
+    log.debug('verbose internals');
+    log.info('kept');
+    expect(calls).toEqual(['info kept | run=r1']);
+  });
+
+  it('brackets a phase in the host group when it has one, and skips it when it does not', async () => {
+    const groups: string[] = [];
+    await createLogger({
+      sink: actionSink({
+        info: () => {},
+        startGroup: (name) => groups.push(`start ${name}`),
+        endGroup: () => groups.push('end')
+      }),
+      env: {}
+    }).phase('discover', async () => 'ok');
+    expect(groups).toEqual(['start discover', 'end']);
+
+    // No group support: the phase still runs and still returns its value.
+    await expect(
+      createLogger({ sink: actionSink({ info: () => {} }), env: {} }).phase('discover', async () => 'ok')
+    ).resolves.toBe('ok');
   });
 });
 

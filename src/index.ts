@@ -23,6 +23,7 @@ export type {
 export {
   createLogger,
   consoleSink,
+  actionSink,
   resolveLogLevel,
   describeError,
   describeUrl,
@@ -32,6 +33,7 @@ export type {
   Logger,
   LoggerOptions,
   LogSink,
+  ActionCoreLike,
   LogLevel,
   LogFields,
   HttpDiagnostic

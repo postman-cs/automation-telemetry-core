@@ -128,6 +128,43 @@ export function consoleSink(target: Pick<Console, 'log' | 'warn' | 'error'> = co
 }
 
 /**
+ * The shape every action in the suite already holds: the @actions/core facade,
+ * or the hand-rolled reporter its CLI passes in place of one. Only `info` is
+ * guaranteed, because that is the one channel every existing facade in this
+ * repo set implements.
+ */
+export interface ActionCoreLike {
+  info(message: string): void;
+  debug?(message: string): void;
+  warning?(message: string): void;
+  error?(message: string): void;
+  startGroup?(name: string): void;
+  endGroup?(): void;
+  isDebug?(): boolean;
+}
+
+/**
+ * Adapt an @actions/core-shaped facade to LogSink.
+ *
+ * Each channel degrades to the next one the host actually implements, so a
+ * failure is never swallowed by a reporter that happens to lack `error`. Debug
+ * is the deliberate exception: a host with no debug channel drops those lines
+ * rather than folding them into info, because debug output is opt-in and
+ * promoting it would put verbose diagnostics into every consumer's default log.
+ */
+export function actionSink(core: ActionCoreLike): LogSink {
+  return {
+    debug: (message) => core.debug?.(message),
+    info: (message) => core.info(message),
+    warning: (message) => (core.warning ?? core.info)(message),
+    error: (message) => (core.error ?? core.warning ?? core.info)(message),
+    startGroup: core.startGroup ? (name) => core.startGroup?.(name) : undefined,
+    endGroup: core.endGroup ? () => core.endGroup?.() : undefined,
+    isDebug: core.isDebug ? () => core.isDebug?.() ?? false : undefined
+  };
+}
+
+/**
  * Values short enough to be non-identifying but long enough to be unique are
  * still worth masking when they are registered as secrets. Anything under this
  * length is ignored: scrubbing a 1-3 character string would corrupt ordinary
