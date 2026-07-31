@@ -229,10 +229,71 @@ export function createRecordingFetch(
   }) as typeof fetch;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Reject a structurally incomplete fixture before it can serve a request.
+ * `new Response(undefined, {})` is a valid 200 with a null body, so an
+ * interaction missing `status`/`body`/`responseHeaders` would otherwise replay
+ * as a silent success — the exact false-green a fail-closed transport exists to
+ * prevent. Hand-edited and machine-sanitized cassettes both land here.
+ */
+function validateInteraction(value: unknown, index: number): void {
+  const at = `interactions[${index}]`;
+  if (!isPlainRecord(value)) {
+    throw new Error(`Cassette ${at} must be an object; received ${typeof value}`);
+  }
+  if (typeof value.key !== 'string' || value.key.length === 0) {
+    throw new Error(`Cassette ${at}.key must be a non-empty string`);
+  }
+  const at_ = `${at} ("${value.key}")`;
+  if (typeof value.requestQuery !== 'string') {
+    throw new Error(`Cassette ${at_}.requestQuery must be a string`);
+  }
+  if (
+    !Number.isInteger(value.status) ||
+    (value.status as number) < 100 ||
+    (value.status as number) > 599
+  ) {
+    throw new Error(
+      `Cassette ${at_}.status must be an integer HTTP status; received ${JSON.stringify(value.status)}`
+    );
+  }
+  if (typeof value.body !== 'string') {
+    throw new Error(`Cassette ${at_}.body must be a string`);
+  }
+  if (!isPlainRecord(value.responseHeaders)) {
+    throw new Error(`Cassette ${at_}.responseHeaders must be an object`);
+  }
+  for (const [name, headerValue] of Object.entries(value.responseHeaders)) {
+    if (typeof headerValue !== 'string') {
+      throw new Error(`Cassette ${at_}.responseHeaders["${name}"] must be a string`);
+    }
+  }
+  if (value.statusText !== undefined && typeof value.statusText !== 'string') {
+    throw new Error(`Cassette ${at_}.statusText must be a string when present`);
+  }
+  if (
+    value.requestBodySha256 !== undefined &&
+    !(typeof value.requestBodySha256 === 'string' && /^[a-f0-9]{64}$/.test(value.requestBodySha256))
+  ) {
+    throw new Error(`Cassette ${at_}.requestBodySha256 must be a sha-256 hex digest when present`);
+  }
+  if (value.repeatLast !== undefined && typeof value.repeatLast !== 'boolean') {
+    throw new Error(`Cassette ${at_}.repeatLast must be a boolean when present`);
+  }
+}
+
 function validateCassette(cassette: Cassette): void {
   if (cassette.version !== 2) {
     throw new Error(`Unsupported cassette version ${String(cassette.version)}; expected version 2`);
   }
+  if (!Array.isArray(cassette.interactions)) {
+    throw new Error('Cassette interactions must be an array');
+  }
+  cassette.interactions.forEach(validateInteraction);
 }
 
 export function createReplayFetch(cassette: Cassette): typeof fetch {

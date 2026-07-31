@@ -6,7 +6,8 @@ import {
   createEmptyCassette,
   createRecordingFetch,
   createReplayFetch,
-  interactionKey
+  interactionKey,
+  type Cassette
 } from '../src/cassette.js';
 
 describe('shared cassette transport', () => {
@@ -167,5 +168,47 @@ describe('shared cassette transport', () => {
     await replay('https://api.example/poll');
     await replay('https://api.example/poll');
     await expect(replay('https://api.example/poll')).rejects.toThrow(/exhausted/i);
+  });
+
+  it('rejects an unsupported cassette version and a non-array interaction list', () => {
+    expect(() => createReplayFetch({ version: 1, interactions: [] } as unknown as Cassette)).toThrow(
+      /Unsupported cassette version 1/
+    );
+    expect(() => createReplayFetch({ version: 2 } as unknown as Cassette)).toThrow(
+      /interactions must be an array/
+    );
+  });
+
+  it('refuses a structurally incomplete interaction instead of replaying a default 200', () => {
+    const match = cassetteRequest('https://api.example/me', 'GET');
+    const wellFormed = {
+      ...match,
+      status: 200,
+      body: '{}',
+      responseHeaders: { 'content-type': 'application/json' }
+    };
+    const cases: Array<[Record<string, unknown>, RegExp]> = [
+      [{ ...wellFormed, status: undefined }, /\.status must be an integer HTTP status/],
+      [{ ...wellFormed, status: 99 }, /\.status must be an integer HTTP status/],
+      [{ ...wellFormed, body: undefined }, /\.body must be a string/],
+      [{ ...wellFormed, responseHeaders: undefined }, /\.responseHeaders must be an object/],
+      [{ ...wellFormed, responseHeaders: { 'x-count': 3 } }, /responseHeaders\["x-count"\]/],
+      [{ ...wellFormed, key: '' }, /\.key must be a non-empty string/],
+      [{ ...wellFormed, requestQuery: undefined }, /\.requestQuery must be a string/],
+      [{ ...wellFormed, statusText: 7 }, /\.statusText must be a string when present/],
+      [{ ...wellFormed, requestBodySha256: 'nope' }, /\.requestBodySha256 must be a sha-256/],
+      [{ ...wellFormed, repeatLast: 'yes' }, /\.repeatLast must be a boolean when present/]
+    ];
+
+    for (const [interaction, expected] of cases) {
+      expect(() =>
+        createReplayFetch({ version: 2, interactions: [interaction] } as unknown as Cassette)
+      ).toThrow(expected);
+    }
+
+    expect(() =>
+      createReplayFetch({ version: 2, interactions: [null] } as unknown as Cassette)
+    ).toThrow(/interactions\[0\] must be an object/);
+    expect(() => createReplayFetch({ version: 2, interactions: [wellFormed] })).not.toThrow();
   });
 });
