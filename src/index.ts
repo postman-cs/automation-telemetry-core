@@ -52,3 +52,57 @@ export {
   secretsResolverEnvironmentKeys
 } from './secrets-resolver.js';
 export type { SecretsResolverProvider } from './secrets-resolver.js';
+
+export {
+  HttpError,
+  REDACTED,
+  normalizeSecretValues,
+  redactSecrets,
+  sanitizeHeaders,
+  toOneLine
+} from './http/http-error.js';
+export type {
+  HeaderBag,
+  HttpErrorInit,
+  HttpErrorResponseInit
+} from './http/http-error.js';
+
+export {
+  computeBoundedRetryDelayMs,
+  extractHttpStatus,
+  fullJitterDelayMs,
+  isAmbiguousMutationFailure,
+  isRetryableGatewayFailure,
+  isRetryableHttpStatus,
+  isTransientHttpStatus,
+  parseRetryAfterMs,
+  retry,
+  SAFE_READ_RETRY,
+  shouldRetryReadError,
+  sleep
+} from './http/retry.js';
+export type {
+  BoundedRetryDelayOptions,
+  JitterRounding,
+  RetryContext,
+  RetryDecisionContext,
+  RetryOptions
+} from './http/retry.js';
+
+export {
+  AccessTokenGatewayClient,
+  DEFAULT_POSTMAN_BIFROST_BASE_URL
+} from './http/gateway-client.js';
+export type {
+  AccessTokenGatewayClientOptions,
+  GatewayAppVersionProvider,
+  GatewayDirectRequest,
+  GatewayFallbackMode,
+  GatewayMethod,
+  GatewayRequest,
+  GatewayRequestOptions,
+  GatewayRetryEvent,
+  GatewayRetryMode,
+  GatewaySecretMasker,
+  GatewayTokenProvider
+} from './http/gateway-client.js';

@@ -1,9 +1,17 @@
 # @postman-cse/automation-core
 
-Shared anonymous usage telemetry for the postman-actions suite. One source of
-truth for CI-system detection, repo/SCM detection, and the fire-and-forget event
-client; each action depends on this package and esbuild inlines it into the
-action's self-contained `dist/`.
+Shared runtime foundations for the Postman Enterprise Automation Suite. The
+package owns the suite's HTTP error taxonomy, retry policy, access-token gateway
+client, structured logging, CI/repo context detection, secrets-resolver helpers,
+and fire-and-forget telemetry. Each action depends on this package and esbuild
+inlines it into the action's self-contained `dist/`.
+
+## Export surfaces
+
+| Module | Surface |
+| --- | --- |
+| `@postman-cse/automation-core` | HTTP errors, retry helpers/predicates, gateway client, logging, context, secrets resolver, telemetry |
+| `@postman-cse/automation-core/cassette` | dev/test-only fail-closed record/replay transport with query/body matching and response-header replay |
 
 ## What it sends
 
@@ -47,6 +55,41 @@ telemetry.emitCompletion('success');
 option). Opt out with `POSTMAN_ACTIONS_TELEMETRY=off` or `DO_NOT_TRACK=1`.
 Corporate proxies are honored via `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`.
 
+### HTTP foundations
+
+```ts
+import {
+  AccessTokenGatewayClient,
+  HttpError,
+  isRetryableGatewayFailure,
+  retry
+} from '@postman-cse/automation-core';
+```
+
+Safe reads use the shared superset predicate: statusless transport failures,
+HTTP `408`, `429`, every `5xx`, and the gateway timeout/downstream markers
+`ESOCKETTIMEDOUT`, `ETIMEDOUT`, `ECONNRESET`, `serverError`, and `downstream`.
+Mutations remain single-shot unless a caller explicitly selects `safe` or
+`rate-limit` retry mode. Retry budgets, full-jitter rounding/base/cap, event
+hooks, request deadlines, auth refresh, inner-error mapping, and cold fallback
+are configurable on `AccessTokenGatewayClient`.
+
+### Cassette transport
+
+```ts
+import {
+  createEmptyCassette,
+  createRecordingFetch,
+  createReplayFetch
+} from '@postman-cse/automation-core/cassette';
+```
+
+Cassette v2 keys proxy and direct routes by method/path, canonical query, and a
+SHA-256 request-body digest without storing request bodies. Recording preserves
+response headers and redacts mint tokens. Replay fails on unknown keys and on
+exhausted response queues; a fixture must mark its final interaction
+`repeatLast: true` to repeat polling responses.
+
 ## Develop
 
 ```sh
@@ -54,4 +97,5 @@ npm test        # vitest
 npm run typecheck
 npm run lint
 npm run build    # tsc -> dist (JS + .d.ts)
+npm run verify:package
 ```
