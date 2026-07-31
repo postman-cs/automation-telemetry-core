@@ -538,6 +538,7 @@ function directRoute(url: string, method: string, serviceHint?: string): RouteTr
     [/^\/repos\//, 'api.github.com'],
     [/^\/me(?:\?|$)/, 'postman-api'],
     [/^\/service-account-tokens(?:\?|$)/, 'postman-api'],
+    [/^\/api\/internal\/system-envs\/associate(?:\?|$)/, 'catalog-admin'],
     [/^\/api\/sessions\/current(?:\?|$)/, 'iapub'],
     [/^\/api\/app-?[Vv]ersion(?:\?|$)/, 'app-version']
   ];

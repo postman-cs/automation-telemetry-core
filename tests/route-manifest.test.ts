@@ -111,6 +111,29 @@ describe('route extraction', () => {
       }
     ]);
   });
+
+  it('extracts the dynamic catalog-admin worker route', () => {
+    const { sourceRoot } = fixture(`
+      class Client {
+        constructor(private readonly workerBaseUrl: string) {}
+        associate() {
+          return this.fetchImpl(
+            \`\${this.workerBaseUrl}/api/internal/system-envs/associate\`,
+            { method: 'POST' }
+          );
+        }
+      }
+    `);
+
+    expect(extractRoutesFromSource({ sourceRoot })).toEqual([
+      {
+        service: 'catalog-admin',
+        method: 'POST',
+        path: '/api/internal/system-envs/associate',
+        sourceFiles: ['client.ts']
+      }
+    ]);
+  });
 });
 
 describe('route manifest validation', () => {
