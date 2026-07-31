@@ -69,16 +69,26 @@ const cassetteRuntimeExports = [
 const cassetteTypeExports = ['Cassette', 'CassetteInteraction', 'CassetteRequest'];
 const routeManifestRuntimeExports = [
   'extractRoutesFromSource',
+  'normalizePath',
   'ROUTE_CLASSIFICATIONS',
+  'stripComments',
   'validateRouteManifest'
 ];
 const routeManifestTypeExports = [
+  'AllowedPassthrough',
+  'CallSite',
   'ExtractedRoute',
   'ExtractRoutesOptions',
+  'ExtractionResult',
+  'ProxyHelper',
+  'ProxyHelperConfig',
   'RouteClassification',
   'RouteManifest',
   'RouteManifestRoute',
   'RouteManifestValidationResult',
+  'ServiceAlias',
+  'ServiceAliasRoute',
+  'ValidateRouteManifestResult',
   'ValidateRouteManifestOptions'
 ];
 
