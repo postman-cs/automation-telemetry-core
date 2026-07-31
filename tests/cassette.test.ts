@@ -92,6 +92,24 @@ describe('shared cassette transport', () => {
     expect(JSON.stringify(cassette)).not.toContain('live-secret');
   });
 
+  it('redacts HTTP service-account token responses with the default masker', async () => {
+    const cassette = createEmptyCassette();
+    const liveToken = 'http-live-secret';
+    const recording = createRecordingFetch(
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ access_token: liveToken }), { status: 201 })
+      ),
+      cassette
+    );
+
+    await recording('http://api.example/service-account-tokens', { method: 'POST' });
+
+    expect(JSON.stringify(cassette)).not.toContain(liveToken);
+    expect(cassette.interactions[0]?.body).toBe(
+      JSON.stringify({ access_token: CASSETTE_MINTED_TOKEN })
+    );
+  });
+
   it('hard-fails on key mismatch and exhausted queues', async () => {
     const cassette = createEmptyCassette();
     const match = cassetteRequest('https://api.example/me', 'GET');

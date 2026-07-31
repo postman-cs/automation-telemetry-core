@@ -146,7 +146,7 @@ export function interactionKey(
 }
 
 function isMintKey(key: string): boolean {
-  return /^POST https:\/\/[^ ]+\/service-account-tokens(?:[? ]|$)/.test(key);
+  return /^POST https?:\/\/[^ ]+\/service-account-tokens(?:[? ]|$)/.test(key);
 }
 
 function redactResponseBody(
