@@ -122,7 +122,9 @@ describe('shared cassette transport', () => {
     const replay = createReplayFetch(cassette);
 
     await expect(replay('https://api.example/unknown')).rejects.toThrow(/no recorded response/i);
-    await expect(replay('https://api.example/me')).resolves.toBeInstanceOf(Response);
+    const response = await replay('https://api.example/me');
+    expect(response).toBeInstanceOf(Response);
+    expect(response.headers.get('content-type')).toBe('application/json');
     await expect(replay('https://api.example/me')).rejects.toThrow(/exhausted/i);
   });
 
