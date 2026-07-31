@@ -67,6 +67,20 @@ const cassetteRuntimeExports = [
   'interactionKey'
 ];
 const cassetteTypeExports = ['Cassette', 'CassetteInteraction', 'CassetteRequest'];
+const routeManifestRuntimeExports = [
+  'extractRoutesFromSource',
+  'ROUTE_CLASSIFICATIONS',
+  'validateRouteManifest'
+];
+const routeManifestTypeExports = [
+  'ExtractedRoute',
+  'ExtractRoutesOptions',
+  'RouteClassification',
+  'RouteManifest',
+  'RouteManifestRoute',
+  'RouteManifestValidationResult',
+  'ValidateRouteManifestOptions'
+];
 
 const rootExports = await import('@postman-cse/automation-core');
 for (const name of [...resolverRuntimeExports, ...httpRuntimeExports]) {
@@ -76,6 +90,11 @@ for (const name of [...resolverRuntimeExports, ...httpRuntimeExports]) {
 const cassetteExports = await import('@postman-cse/automation-core/cassette');
 for (const name of cassetteRuntimeExports) {
   assert.ok(name in cassetteExports, `dist/cassette.js must export ${name}`);
+}
+
+const routeManifestExports = await import('@postman-cse/automation-core/route-manifest');
+for (const name of routeManifestRuntimeExports) {
+  assert.ok(name in routeManifestExports, `dist/route-manifest.js must export ${name}`);
 }
 
 const declarations = await import('node:fs/promises').then(({ readFile }) =>
@@ -101,6 +120,17 @@ for (const name of [...cassetteRuntimeExports, ...cassetteTypeExports]) {
   );
 }
 
+const routeManifestDeclarations = await import('node:fs/promises').then(({ readFile }) =>
+  readFile(new URL('../dist/route-manifest.d.ts', import.meta.url), 'utf8')
+);
+for (const name of [...routeManifestRuntimeExports, ...routeManifestTypeExports]) {
+  assert.match(
+    routeManifestDeclarations,
+    new RegExp(`\\b${name}\\b`),
+    `dist/route-manifest.d.ts must export ${name}`
+  );
+}
+
 const packOutput = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
   cwd: packageRoot,
   encoding: 'utf8'
@@ -118,6 +148,8 @@ for (const path of [
   'dist/http/gateway-client.d.ts',
   'dist/cassette.js',
   'dist/cassette.d.ts',
+  'dist/route-manifest.js',
+  'dist/route-manifest.d.ts',
   'dist/index.js',
   'dist/index.d.ts'
 ]) {
