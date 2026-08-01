@@ -706,7 +706,23 @@ export function extractRoutesFromSource(options: ExtractRoutesOptions): Extracti
       while ((calleeMatch = calleePattern.exec(code)) !== null) {
         const calleeEnd = calleeMatch.index + calleeMatch[0].length;
         const openParen = callOpenParen(code, calleeEnd);
-        if (openParen === -1) continue;
+        if (openParen === -1) {
+          const unsupportedInvocation = code.slice(calleeEnd, calleeEnd + 80).match(
+            /^\s*(?:\.\s*(call|apply)\s*\(|\?\.\s*\()/
+          );
+          if (unsupportedInvocation) {
+            const shape = unsupportedInvocation[1]
+              ? `.${unsupportedInvocation[1]}()`
+              : '?.()';
+            reportUnattributed({
+              file: relative,
+              line: lineAt(code, calleeMatch.index),
+              snippet: code.slice(calleeMatch.index, calleeMatch.index + 120).trim(),
+              reason: `unsupported fetch invocation shape ${shape} (unsupported call shape ${shape.slice(0, -1)} on fetch callee)`
+            });
+          }
+          continue;
+        }
         const args = readArgs(code, openParen);
         const line = lineAt(code, calleeMatch.index);
         const rawUrl = (args[0] ?? '').trim();

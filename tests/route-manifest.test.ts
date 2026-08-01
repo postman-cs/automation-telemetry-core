@@ -278,6 +278,29 @@ describe('route manifest validation', () => {
     );
   });
 
+  it('fails closed on unsupported direct-call shapes and unrecognized HTTP methods', () => {
+    const { repoRoot, sourceRoot } = fixture(`
+      fetcher.call(undefined, \`${'${apiHost}'}/v1/weird\`, { method: 'GET' });
+      fetcher(\`${'${apiHost}'}/v1/tea\`, { method: 'BREW' });
+    `);
+
+    const result = validateRouteManifest({
+      repoRoot,
+      sourceRoot,
+      manifest: manifest([]),
+      serviceAliases: { apiHost: 'postman-api' }
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.extractedRoutes).toEqual([]);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/unattributed HTTP call site .*unsupported (?:fetch invocation )?shape/),
+        expect.stringMatching(/unattributed HTTP call site .*unrecognized HTTP method "BREW"/)
+      ])
+    );
+  });
+
   it('rejects a stale manifest route', () => {
     const { repoRoot, sourceRoot } = fixture('export const noRoutes = true;');
 
