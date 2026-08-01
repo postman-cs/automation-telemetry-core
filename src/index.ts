@@ -106,3 +106,12 @@ export type {
   GatewaySecretMasker,
   GatewayTokenProvider
 } from './http/gateway-client.js';
+
+export { createErrorInjector, InjectedTransportError } from './http/error-injection.js';
+export type {
+  ErrorInjector,
+  InjectedFailureKind,
+  InjectionCheckpoint,
+  InjectionRecordEntry,
+  InjectionRule
+} from './http/error-injection.js';
