@@ -59,6 +59,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/postman-cs/automation-telemetry-core.git"
+    "url": "git+https://github.com/postman-cs/automation-core.git"
   }
 }
